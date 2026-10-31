@@ -2,37 +2,181 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Paper Plane setup</title>
 <style>
-  :root { --bg: #f4f1ea; --text: #1c1b1a; --muted: #5b5853; --accent: #2f6fde; --on-accent: #ffffff; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #151514; --text: #f2efe9; --muted: #a9a59e; --accent: #4f8bf0; --on-accent: #ffffff; }
-  }
+  :root { --bg:#f6f3ee; --card:#fff; --text:#1d1b19; --muted:#6b645c; --accent:#d9622b; --ok:#2f8f4e; --bad:#c0392b; --line:#e4ddd3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1b1917; --card:#26231f; --text:#f2ede6; --muted:#a69e94; --line:#3a352f; } }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
-    font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-    display: flex; align-items: center; justify-content: center;
-    padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
-  }
-  main { width: 100%; max-width: 420px; text-align: center; }
-  img { width: 96px; height: 96px; border-radius: 22px; }
-  h1 { font-size: 26px; margin: 16px 0 24px; }
-  a.install {
-    display: block; padding: 18px 20px; border-radius: 16px; background: var(--accent); color: var(--on-accent);
-    font-size: 22px; font-weight: 600; text-decoration: none;
-  }
-  p { color: var(--muted); text-align: left; margin: 20px 0 0; }
+  body { margin:0; background:var(--bg); color:var(--text); font:17px/1.45 -apple-system, system-ui, sans-serif; }
+  main { max-width:560px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:26px; margin:0 0 6px; }
+  p.lead { color:var(--muted); margin:0 0 20px; }
+  .step { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin:0 0 14px; }
+  .step h2 { font-size:17px; margin:0 0 8px; }
+  .step ol { margin:6px 0 0; padding-left:20px; }
+  .step li { margin:4px 0; }
+  input { width:100%; font:16px ui-monospace, monospace; padding:12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--text); }
+  button { width:100%; margin-top:10px; font:600 17px -apple-system, system-ui; padding:14px; border:0; border-radius:12px; background:var(--accent); color:#fff; }
+  button:disabled { opacity:.45; }
+  #apple-sign-in-button { margin-top:10px; min-height:44px; }
+  #log { white-space:pre-wrap; font:13px/1.4 ui-monospace, monospace; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px; margin-top:10px; max-height:360px; overflow:auto; }
+  .ok { color:var(--ok); font-weight:600; }
+  .bad { color:var(--bad); font-weight:600; }
+  code { font:14px ui-monospace, monospace; }
 </style>
 </head>
 <body>
 <main>
-  <img src="icon512.png" alt="">
   <h1>Paper Plane setup</h1>
-  <a class="install" href="itms-services://?action=download-manifest&amp;url=https://turbocrackers.github.io/paperplane-setup/manifest.plist">Install</a>
-  <p>Tap Install. If iOS says the developer isn't trusted, go to Settings › General › VPN &amp; Device Management and trust it.</p>
-  <p>Then open Paper Plane once and check Settings › Internet says Push sign-up: saved.</p>
+  <p class="lead">One-time step so notifications work with Paper Plane closed. It signs Paper Plane's notifications up in CloudKit's test area; then you deploy them to the real one.</p>
+
+  <div class="step">
+    <h2>1. Make an access token (CloudKit Console)</h2>
+    <ol>
+      <li>On <b>icloud.developer.apple.com</b>, open <b>iCloud.com.turbo.paperplane</b>.</li>
+      <li>Go to <b>Tokens &amp; Keys</b> (or <b>API Access</b>) → <b>API Tokens</b> → <b>+</b>.</li>
+      <li>Name: <code>setup page</code>. Sign In Callback: <b>postMessage</b>. Allowed Origins: <code>https://turbocrackers.github.io</code> (or "Any domain").</li>
+      <li>Save, copy the token, and paste it here:</li>
+    </ol>
+    <input id="token" placeholder="Paste the API token" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button id="start">Continue</button>
+  </div>
+
+  <div class="step">
+    <h2>2. Sign in with your Apple ID</h2>
+    <p style="margin:0;color:var(--muted)">Any Apple ID works. Allow the pop-up if Safari asks.</p>
+    <div id="apple-sign-in-button"></div>
+  </div>
+
+  <div class="step">
+    <h2>3. Sign up the notifications</h2>
+    <button id="make" disabled>Sign up notifications</button>
+    <div id="log">Waiting for step 1…</div>
+  </div>
+
+  <div class="step">
+    <h2>4. Then</h2>
+    <ol>
+      <li>In the CloudKit Console: <b>Deploy Schema Changes…</b> → <b>Deploy</b> (even if it lists no changes).</li>
+      <li>Close and reopen Paper Plane. Settings › Internet should say <b>Push sign-up: saved</b>.</li>
+      <li>Tell Claude, so it can delete this page and the token.</li>
+    </ol>
+  </div>
 </main>
+
+<script src="https://cdn.apple-cloudkit.com/ck/2/cloudkit.js"></script>
+<script>
+(function () {
+  var CONTAINER = 'iCloud.com.turbo.paperplane';
+  var logEl = document.getElementById('log');
+  var makeBtn = document.getElementById('make');
+  var startBtn = document.getElementById('start');
+  var tokenEl = document.getElementById('token');
+  var db = null;
+
+  function log(msg, cls) {
+    var line = document.createElement('div');
+    if (cls) line.className = cls;
+    line.textContent = msg;
+    if (logEl.dataset.fresh !== '1') { logEl.textContent = ''; logEl.dataset.fresh = '1'; }
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function describe(e) {
+    if (!e) return 'unknown error';
+    var parts = [];
+    ['ckErrorCode', 'serverErrorCode', 'reason', 'message', 'subscriptionID'].forEach(function (k) {
+      if (e[k]) parts.push(k + ': ' + e[k]);
+    });
+    return parts.length ? parts.join(' · ') : String(e);
+  }
+
+  // The same subscription shapes the app saves (CloudTransport.subscribe): Envelope records for one recipient, one
+  // for kind "message" (an alert) and one for kind "receipt" (silent). The recipient here is a placeholder: only the
+  // shape matters for promoting them to Production.
+  function filters(kind) {
+    return [
+      { fieldName: 'recipient', comparator: 'EQUALS', fieldValue: { value: 'setup-page' } },
+      { fieldName: 'kind', comparator: 'EQUALS', fieldValue: { value: kind } }
+    ];
+  }
+  function subscriptions(full) {
+    var alert = full
+      ? { alertBody: 'New message', titleLocalizationKey: 'ENVELOPE_TITLE', titleLocalizationArgs: ['senderName'],
+          soundName: 'default', shouldSendMutableContent: true, shouldSendContentAvailable: true,
+          desiredKeys: ['sender', 'messageID'] }
+      : { alertBody: 'New message', soundName: 'default', shouldSendContentAvailable: true };
+    return [
+      { subscriptionType: 'query', subscriptionID: 'envelopes-setup-page', firesOn: ['create'],
+        query: { recordType: 'Envelope', filterBy: filters('message') }, notificationInfo: alert },
+      { subscriptionType: 'query', subscriptionID: 'receipts-setup-page', firesOn: ['create'],
+        query: { recordType: 'Envelope', filterBy: filters('receipt') }, notificationInfo: { shouldSendContentAvailable: true } }
+    ];
+  }
+
+  function signedIn(user) {
+    var name = user && user.nameComponents ? (user.nameComponents.givenName || '') : '';
+    log('Signed in' + (name ? ' as ' + name : '') + '. Tap "Sign up notifications".', 'ok');
+    makeBtn.disabled = false;
+  }
+
+  startBtn.addEventListener('click', function () {
+    var token = tokenEl.value.trim();
+    if (!token) { log('Paste the API token first.', 'bad'); return; }
+    if (typeof CloudKit === 'undefined') { log('CloudKit didn\'t load. Check your connection and reload the page.', 'bad'); return; }
+    try {
+      CloudKit.configure({
+        containers: [{
+          containerIdentifier: CONTAINER,
+          environment: 'development',
+          apiTokenAuth: {
+            apiToken: token,
+            persist: false,
+            signInButton: { id: 'apple-sign-in-button', theme: 'black' }
+          }
+        }]
+      });
+    } catch (e) { log('Couldn\'t set up CloudKit: ' + describe(e), 'bad'); return; }
+    var container = CloudKit.getDefaultContainer();
+    db = container.publicCloudDatabase;
+    startBtn.disabled = true;
+    log('Token accepted. Now sign in with the Apple button in step 2.');
+    container.setUpAuth().then(function (user) {
+      if (user) { signedIn(user); }
+      else { container.whenUserSignsIn().then(signedIn); }
+    }).catch(function (e) {
+      startBtn.disabled = false;
+      log('CloudKit refused the token: ' + describe(e) + '\nCheck the token, its Allowed Origins and that its Sign In Callback is postMessage.', 'bad');
+    });
+  });
+
+  function save(full) {
+    return db.saveSubscriptions(subscriptions(full)).then(function (resp) {
+      if (resp.hasErrors) { throw resp.errors && resp.errors.length ? resp.errors[0] : resp; }
+      return resp;
+    });
+  }
+
+  makeBtn.addEventListener('click', function () {
+    makeBtn.disabled = true;
+    log('Signing up…');
+    save(true).catch(function (e) {
+      log('Full version refused (' + describe(e) + '); trying the simpler version…');
+      return save(false);
+    }).then(function () {
+      log('Saved both notification sign-ups in the test area.', 'ok');
+      return db.fetchAllSubscriptions().then(function (resp) {
+        var ids = (resp.subscriptions || []).map(function (s) { return s.subscriptionID; });
+        log('CloudKit now lists: ' + (ids.join(', ') || '(none)'));
+        log('Done. Now do step 4: Deploy Schema Changes, then reopen Paper Plane.', 'ok');
+      });
+    }).catch(function (e) {
+      makeBtn.disabled = false;
+      log('Didn\'t work: ' + describe(e) + '\nTake a screenshot of this and send it to Claude.', 'bad');
+    });
+  });
+})();
+</script>
 </body>
 </html>

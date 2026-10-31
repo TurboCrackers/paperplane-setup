@@ -1,1 +1,38 @@
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Paper Plane setup</title><body style="font-family:-apple-system;padding:24px"><h1>Paper Plane setup</h1><p>Getting ready… check back in a few minutes.</p></body>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Paper Plane setup</title>
+<style>
+  :root { --bg: #f4f1ea; --text: #1c1b1a; --muted: #5b5853; --accent: #2f6fde; --on-accent: #ffffff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --text: #f2efe9; --muted: #a9a59e; --accent: #4f8bf0; --on-accent: #ffffff; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  main { width: 100%; max-width: 420px; text-align: center; }
+  img { width: 96px; height: 96px; border-radius: 22px; }
+  h1 { font-size: 26px; margin: 16px 0 24px; }
+  a.install {
+    display: block; padding: 18px 20px; border-radius: 16px; background: var(--accent); color: var(--on-accent);
+    font-size: 22px; font-weight: 600; text-decoration: none;
+  }
+  p { color: var(--muted); text-align: left; margin: 20px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <img src="icon512.png" alt="">
+  <h1>Paper Plane setup</h1>
+  <a class="install" href="itms-services://?action=download-manifest&amp;url=https://turbocrackers.github.io/paperplane-setup/manifest.plist">Install</a>
+  <p>Tap Install. If iOS says the developer isn't trusted, go to Settings › General › VPN &amp; Device Management and trust it.</p>
+  <p>Then open Paper Plane once and check Settings › Internet says Push sign-up: saved.</p>
+</main>
+</body>
+</html>

@@ -45,7 +45,7 @@
 
   <div class="step">
     <h2>2. Sign in with your Apple ID</h2>
-    <p style="margin:0;color:var(--muted)">Any Apple ID works. Allow the pop-up if Safari asks.</p>
+    <p style="margin:0;color:var(--muted)">Any Apple ID works. Allow the pop-up if Safari asks. If the pop-up says "Authentication Error": in the iPhone's Settings › Apps › Safari, turn off <b>Prevent Cross-Site Tracking</b> and <b>Block Pop-ups</b> for now, close the pop-up, reload this page and try again (turn them back on afterwards).</p>
     <div id="apple-sign-in-button"></div>
   </div>
 
@@ -124,6 +124,7 @@
   startBtn.addEventListener('click', function () {
     var token = tokenEl.value.trim();
     if (!token) { log('Paste the API token first.', 'bad'); return; }
+    try { sessionStorage.setItem('ppToken', token); } catch (e) {}
     if (typeof CloudKit === 'undefined') { log('CloudKit didn\'t load. Check your connection and reload the page.', 'bad'); return; }
     try {
       CloudKit.configure({
@@ -150,6 +151,8 @@
       log('CloudKit refused the token: ' + describe(e) + '\nCheck the token, its Allowed Origins and that its Sign In Callback is postMessage.', 'bad');
     });
   });
+
+  try { var kept = sessionStorage.getItem('ppToken'); if (kept) { tokenEl.value = kept; } } catch (e) {}
 
   function save(full) {
     return db.saveSubscriptions(subscriptions(full)).then(function (resp) {

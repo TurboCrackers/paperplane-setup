@@ -52,6 +52,13 @@
     <div id="log">Waiting for steps 1 and 2…</div>
   </div>
 
+  <div class="step" id="testStep" style="display:none">
+    <h2>Test: send me a notification</h2>
+    <p style="margin:0;color:var(--muted)">Sends a pretend message to your phone through the real (Production) database, the same way a friend's message arrives. Swipe Paper Plane closed first; a "New message" notification should arrive within a few seconds. Paper Plane throws the pretend message away when it opens.</p>
+    <input id="addr" value="7ed6dac89605e0c81a20b85ac214d0f3" autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-top:10px">
+    <button id="testBtn" disabled>Send me a test notification</button>
+  </div>
+
   <div class="step">
     <h2>4. Then</h2>
     <ol>
@@ -66,7 +73,13 @@
 (function () {
   // CloudKit Web Services, called directly (no CloudKit JS, no pop-up): the sign-in is a full-page redirect to Apple
   // and back, which hands this page a web auth token in its URL.
-  var BASE = 'https://api.apple-cloudkit.com/database/1/iCloud.com.turbo.paperplane/development/public';
+  var query = new URLSearchParams(location.search);
+  if (query.get('test') === '1') { try { localStorage.setItem('ppMode', 'test'); } catch (e) {} }
+  if (query.get('test') === '0') { try { localStorage.removeItem('ppMode'); } catch (e) {} }
+  var TEST = false;
+  try { TEST = localStorage.getItem('ppMode') === 'test'; } catch (e) {}
+  var BASE = 'https://api.apple-cloudkit.com/database/1/iCloud.com.turbo.paperplane/' +
+             (TEST ? 'production' : 'development') + '/public';
   var logEl = document.getElementById('log');
   var tokenEl = document.getElementById('token');
   var signinBtn = document.getElementById('signin');
@@ -140,8 +153,9 @@
         log('Opening Apple\'s sign-in page…');
         location.href = r.body.redirectURL;
       } else if (r.status === 200) {
-        log('Already signed in. Tap "Sign up notifications".', 'ok');
+        log('Already signed in.', 'ok');
         makeBtn.disabled = false;
+        document.getElementById('testBtn').disabled = false;
         signinBtn.disabled = false;
       } else {
         signinBtn.disabled = false;
@@ -209,6 +223,39 @@
       log('Didn\'t work: ' + (e && e.message ? e.message : e) + '\nTake a screenshot of this and send it to Claude.', 'bad');
     });
   });
+  if (TEST) {
+    document.getElementById('testStep').style.display = '';
+    makeBtn.parentNode.style.display = 'none';
+    log('Test mode (Production). Sign in, then tap "Send me a test notification".');
+    if (webAuthToken) { document.getElementById('testBtn').disabled = false; log('Signed in.', 'ok'); }
+  }
+  var testBtn = document.getElementById('testBtn');
+  testBtn.addEventListener('click', function () {
+    var addr = document.getElementById('addr').value.trim();
+    if (!apiToken() || !addr) { log('Paste the API token (and keep the address filled in).', 'bad'); return; }
+    testBtn.disabled = true;
+    var id = 'test-' + Date.now().toString(36);
+    log('Sending a pretend message to ' + addr + '… swipe Paper Plane closed now.');
+    setTimeout(function () {
+      call('POST', '/records/modify', { operations: [ { operationType: 'create', record: {
+        recordType: 'Envelope', recordName: 'msg-' + id,
+        fields: {
+          recipient: { value: addr }, kind: { value: 'message' },
+          sender: { value: 'setup-page' }, senderName: { value: 'Paper Plane test' },
+          messageID: { value: id }, created: { value: Date.now() },
+          payload: { value: btoa('test'), type: 'BYTES' }
+        } } } ] }).then(function (r) {
+        var rec = r.body && r.body.records && r.body.records[0];
+        if (r.status === 200 && rec && !rec.serverErrorCode) {
+          log('Sent. A "New message" notification should arrive in a few seconds.', 'ok');
+        } else {
+          log('Didn\'t send: ' + describe(rec || r.body, r.status), 'bad');
+        }
+        testBtn.disabled = false;
+      }).catch(function (e) { testBtn.disabled = false; log('Couldn\'t reach CloudKit: ' + e, 'bad'); });
+    }, 5000);
+  });
+  if (TEST && webAuthToken) { makeBtn.disabled = true; }
 })();
 </script>
 </body>

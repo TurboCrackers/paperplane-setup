@@ -47,7 +47,7 @@
   </div>
 
   <div class="step">
-    <h2>3. Sign up the notifications</h2>
+    <h2>3. Sign up the notifications (round 2)</h2>
     <button id="make" disabled>Sign up notifications</button>
     <div id="log">Waiting for steps 1 and 2…</div>
   </div>
@@ -167,11 +167,16 @@
       notificationInfo: info
     } };
   }
-  function attempt(info) {
-    return call('POST', '/subscriptions/modify', { operations: [
-      sub('envelopes-setup-page', 'message', info),
-      sub('receipts-setup-page', 'receipt', { shouldSendContentAvailable: true })
-    ] });
+  // Round 2: the app's message sign-up also carries two extra fields with each push (desiredKeys) and the sender's
+  // name for the title (titleLocalizationArgs). Production refused those ("notif_additional_field_0"), so this one
+  // matches the app exactly, under a new ID, and shows what CloudKit stored.
+  var exact = { alertBody: 'New message', titleLocalizationKey: 'ENVELOPE_TITLE', titleLocalizationArgs: ['senderName'],
+                soundName: 'default', shouldSendMutableContent: true, shouldSendContentAvailable: true,
+                desiredKeys: ['sender', 'messageID'] };
+  var keysOnly = { alertBody: 'New message', soundName: 'default', shouldSendMutableContent: true,
+                   shouldSendContentAvailable: true, desiredKeys: ['sender', 'messageID'] };
+  function attempt(id, info) {
+    return call('POST', '/subscriptions/modify', { operations: [ sub(id, 'message', info) ] });
   }
   function failures(r) {
     if (r.status !== 200) return [describe(r.body, r.status)];
@@ -183,26 +188,22 @@
   makeBtn.addEventListener('click', function () {
     if (!apiToken()) { log('Paste the API token first.', 'bad'); return; }
     makeBtn.disabled = true;
-    log('Signing up…');
-    var full = { alertBody: 'New message', soundName: 'default', shouldSendContentAvailable: true };
-    var simple = { alertBody: 'New message', shouldSendContentAvailable: true };
-    attempt(full).then(function (r) {
+    log('Signing up (round 2, with the extra fields)…');
+    attempt('envelopes-setup-page-2', exact).then(function (r) {
       var bad = failures(r);
       if (!bad.length) return r;
-      log('First try refused (' + bad.join('; ') + '); trying a simpler version…');
-      return attempt(simple).then(function (r2) {
+      log('Exact copy refused (' + bad.join('; ') + '); trying with just the extra fields…');
+      return attempt('envelopes-setup-page-3', keysOnly).then(function (r2) {
         var bad2 = failures(r2);
         if (bad2.length) throw new Error(bad2.join('; '));
         return r2;
       });
-    }).then(function () {
-      log('Saved both notification sign-ups in the test area.', 'ok');
-      return call('GET', '/subscriptions/list').then(function (r) {
-        var ids = ((r.body && r.body.subscriptions) || []).map(function (s) { return s.subscriptionID; });
-        log('CloudKit now lists: ' + (ids.join(', ') || '(none)'));
-        log('Done. Now do step 4: Deploy Schema Changes, then reopen Paper Plane.', 'ok');
-        store('ppToken', null);
-      });
+    }).then(function (r) {
+      log('Saved.', 'ok');
+      var saved = (r.body && r.body.subscriptions && r.body.subscriptions[0]) || {};
+      log('CloudKit stored: ' + JSON.stringify(saved.notificationInfo || saved));
+      log('Now: Deploy Schema Changes in the Console, then fully close and reopen Paper Plane.', 'ok');
+      store('ppToken', null);
     }).catch(function (e) {
       makeBtn.disabled = false;
       log('Didn\'t work: ' + (e && e.message ? e.message : e) + '\nTake a screenshot of this and send it to Claude.', 'bad');

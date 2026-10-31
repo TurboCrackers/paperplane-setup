@@ -133,8 +133,17 @@
   var cameBack = [];
   params.forEach(function (v, k) { if (k) cameBack.push(k + (v ? ' (' + v.length + ' chars)' : '')); });
   var arrivedWith = cameBack.length ? 'Page opened with: ' + cameBack.join(', ') : '';
-  if (params.get('ckWebAuthToken')) {
-    webAuthToken = params.get('ckWebAuthToken');
+  // Apple hands the sign-in back as ckWebAuthToken and/or ckSession; when the redirect URL already has a query it
+  // appends with a second "?", so the token can also hide inside another parameter's value.
+  var found = params.get('ckWebAuthToken') || params.get('ckSession');
+  if (!found) {
+    params.forEach(function (v) {
+      var m = /ckWebAuthToken=([^&]+)/.exec(v || '');
+      if (m && !found) found = decodeURIComponent(m[1]);
+    });
+  }
+  if (found) {
+    webAuthToken = found;
     history.replaceState(null, '', location.pathname);
     if (apiToken()) {
       log('Signed in. Tap "Sign up notifications".', 'ok');

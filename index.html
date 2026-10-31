@@ -225,7 +225,8 @@
   });
   if (TEST) {
     document.getElementById('testStep').style.display = '';
-    makeBtn.parentNode.style.display = 'none';
+    makeBtn.style.display = 'none';
+    makeBtn.parentNode.querySelector('h2').textContent = 'What CloudKit says';
     log('Test mode (Production). Sign in, then tap "Send me a test notification".');
     if (webAuthToken) { document.getElementById('testBtn').disabled = false; log('Signed in.', 'ok'); }
   }

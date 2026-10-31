@@ -19,11 +19,10 @@
   input { width:100%; font:16px ui-monospace, monospace; padding:12px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--text); }
   button { width:100%; margin-top:10px; font:600 17px -apple-system, system-ui; padding:14px; border:0; border-radius:12px; background:var(--accent); color:#fff; }
   button:disabled { opacity:.45; }
-  #apple-sign-in-button { margin-top:10px; min-height:44px; }
   #log { white-space:pre-wrap; font:13px/1.4 ui-monospace, monospace; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px; margin-top:10px; max-height:360px; overflow:auto; }
   .ok { color:var(--ok); font-weight:600; }
   .bad { color:var(--bad); font-weight:600; }
-  code { font:14px ui-monospace, monospace; }
+  code { font:14px ui-monospace, monospace; word-break:break-all; }
 </style>
 </head>
 <body>
@@ -32,27 +31,25 @@
   <p class="lead">One-time step so notifications work with Paper Plane closed. It signs Paper Plane's notifications up in CloudKit's test area; then you deploy them to the real one.</p>
 
   <div class="step">
-    <h2>1. Make an access token (CloudKit Console)</h2>
+    <h2>1. The access token (CloudKit Console)</h2>
     <ol>
-      <li>On <b>icloud.developer.apple.com</b>, open <b>iCloud.com.turbo.paperplane</b>.</li>
-      <li>Go to <b>Tokens &amp; Keys</b> (or <b>API Access</b>) → <b>API Tokens</b> → <b>+</b>.</li>
-      <li>Name: <code>setup page</code>. Sign In Callback: <b>postMessage</b>. Allowed Origins: <code>https://turbocrackers.github.io</code> (or "Any domain").</li>
-      <li>Save, copy the token, and paste it here:</li>
+      <li>On <b>icloud.developer.apple.com</b>, open <b>iCloud.com.turbo.paperplane</b> → <b>Tokens &amp; Keys</b> (or <b>API Access</b>) → <b>API Tokens</b>, and open your token (or make one with <b>+</b>).</li>
+      <li>Set <b>Sign In Callback</b> to <b>URL Redirect</b>, with the URL <code>https://turbocrackers.github.io/paperplane-setup/</code></li>
+      <li>Allowed Origins: <b>Any domain</b>. Save, copy the token, and paste it here:</li>
     </ol>
     <input id="token" placeholder="Paste the API token" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <button id="start">Continue</button>
   </div>
 
   <div class="step">
     <h2>2. Sign in with your Apple ID</h2>
-    <p style="margin:0;color:var(--muted)">Any Apple ID works. Allow the pop-up if Safari asks. If the pop-up says "Authentication Error": in the iPhone's Settings › Apps › Safari, turn off <b>Prevent Cross-Site Tracking</b> and <b>Block Pop-ups</b> for now, close the pop-up, reload this page and try again (turn them back on afterwards).</p>
-    <div id="apple-sign-in-button"></div>
+    <p style="margin:0;color:var(--muted)">Any Apple ID works. Apple's sign-in page opens in this tab, then brings you back here.</p>
+    <button id="signin">Sign in with Apple ID</button>
   </div>
 
   <div class="step">
     <h2>3. Sign up the notifications</h2>
     <button id="make" disabled>Sign up notifications</button>
-    <div id="log">Waiting for step 1…</div>
+    <div id="log">Waiting for steps 1 and 2…</div>
   </div>
 
   <div class="step">
@@ -60,123 +57,155 @@
     <ol>
       <li>In the CloudKit Console: <b>Deploy Schema Changes…</b> → <b>Deploy</b> (even if it lists no changes).</li>
       <li>Close and reopen Paper Plane. Settings › Internet should say <b>Push sign-up: saved</b>.</li>
-      <li>Tell Claude, so it can delete this page and the token.</li>
+      <li>Delete the API token in the Console, and tell Claude so it can delete this page.</li>
     </ol>
   </div>
 </main>
 
-<script src="https://cdn.apple-cloudkit.com/ck/2/cloudkit.js"></script>
 <script>
 (function () {
-  var CONTAINER = 'iCloud.com.turbo.paperplane';
+  // CloudKit Web Services, called directly (no CloudKit JS, no pop-up): the sign-in is a full-page redirect to Apple
+  // and back, which hands this page a web auth token in its URL.
+  var BASE = 'https://api.apple-cloudkit.com/database/1/iCloud.com.turbo.paperplane/development/public';
   var logEl = document.getElementById('log');
-  var makeBtn = document.getElementById('make');
-  var startBtn = document.getElementById('start');
   var tokenEl = document.getElementById('token');
-  var db = null;
+  var signinBtn = document.getElementById('signin');
+  var makeBtn = document.getElementById('make');
+  var webAuthToken = null;
 
   function log(msg, cls) {
+    if (logEl.dataset.fresh !== '1') { logEl.textContent = ''; logEl.dataset.fresh = '1'; }
     var line = document.createElement('div');
     if (cls) line.className = cls;
     line.textContent = msg;
-    if (logEl.dataset.fresh !== '1') { logEl.textContent = ''; logEl.dataset.fresh = '1'; }
     logEl.appendChild(line);
     logEl.scrollTop = logEl.scrollHeight;
   }
-  function describe(e) {
-    if (!e) return 'unknown error';
+  function store(key, value) {
+    try { if (value == null) { sessionStorage.removeItem(key); localStorage.removeItem(key); } else { sessionStorage.setItem(key, value); localStorage.setItem(key, value); } } catch (e) {}
+  }
+  function recall(key) {
+    try { return sessionStorage.getItem(key) || localStorage.getItem(key); } catch (e) { return null; }
+  }
+  function apiToken() { return tokenEl.value.trim(); }
+  function url(path) {
+    var u = BASE + path + '?ckAPIToken=' + encodeURIComponent(apiToken());
+    if (webAuthToken) u += '&ckWebAuthToken=' + encodeURIComponent(webAuthToken);
+    return u;
+  }
+  function describe(body, status) {
+    if (!body) return 'HTTP ' + status;
     var parts = [];
-    ['ckErrorCode', 'serverErrorCode', 'reason', 'message', 'subscriptionID'].forEach(function (k) {
-      if (e[k]) parts.push(k + ': ' + e[k]);
-    });
-    return parts.length ? parts.join(' · ') : String(e);
+    ['serverErrorCode', 'reason', 'subscriptionID'].forEach(function (k) { if (body[k]) parts.push(k + ': ' + body[k]); });
+    return (parts.length ? parts.join(' · ') : JSON.stringify(body)) + ' (HTTP ' + status + ')';
   }
-
-  // The same subscription shapes the app saves (CloudTransport.subscribe): Envelope records for one recipient, one
-  // for kind "message" (an alert) and one for kind "receipt" (silent). The recipient here is a placeholder: only the
-  // shape matters for promoting them to Production.
-  function filters(kind) {
-    return [
-      { fieldName: 'recipient', comparator: 'EQUALS', fieldValue: { value: 'setup-page' } },
-      { fieldName: 'kind', comparator: 'EQUALS', fieldValue: { value: kind } }
-    ];
-  }
-  function subscriptions(full) {
-    var alert = full
-      ? { alertBody: 'New message', titleLocalizationKey: 'ENVELOPE_TITLE', titleLocalizationArgs: ['senderName'],
-          soundName: 'default', shouldSendMutableContent: true, shouldSendContentAvailable: true,
-          desiredKeys: ['sender', 'messageID'] }
-      : { alertBody: 'New message', soundName: 'default', shouldSendContentAvailable: true };
-    return [
-      { subscriptionType: 'query', subscriptionID: 'envelopes-setup-page', firesOn: ['create'],
-        query: { recordType: 'Envelope', filterBy: filters('message') }, notificationInfo: alert },
-      { subscriptionType: 'query', subscriptionID: 'receipts-setup-page', firesOn: ['create'],
-        query: { recordType: 'Envelope', filterBy: filters('receipt') }, notificationInfo: { shouldSendContentAvailable: true } }
-    ];
-  }
-
-  function signedIn(user) {
-    var name = user && user.nameComponents ? (user.nameComponents.givenName || '') : '';
-    log('Signed in' + (name ? ' as ' + name : '') + '. Tap "Sign up notifications".', 'ok');
-    makeBtn.disabled = false;
-  }
-
-  startBtn.addEventListener('click', function () {
-    var token = tokenEl.value.trim();
-    if (!token) { log('Paste the API token first.', 'bad'); return; }
-    try { sessionStorage.setItem('ppToken', token); } catch (e) {}
-    if (typeof CloudKit === 'undefined') { log('CloudKit didn\'t load. Check your connection and reload the page.', 'bad'); return; }
-    try {
-      CloudKit.configure({
-        containers: [{
-          containerIdentifier: CONTAINER,
-          environment: 'development',
-          apiTokenAuth: {
-            apiToken: token,
-            persist: false,
-            signInButton: { id: 'apple-sign-in-button', theme: 'black' }
-          }
-        }]
+  function call(method, path, payload) {
+    return fetch(url(path), {
+      method: method,
+      headers: payload ? { 'Content-Type': 'application/json' } : {},
+      body: payload ? JSON.stringify(payload) : undefined
+    }).then(function (resp) {
+      return resp.text().then(function (text) {
+        var body = null;
+        try { body = text ? JSON.parse(text) : null; } catch (e) { body = { raw: text.slice(0, 300) }; }
+        return { status: resp.status, body: body };
       });
-    } catch (e) { log('Couldn\'t set up CloudKit: ' + describe(e), 'bad'); return; }
-    var container = CloudKit.getDefaultContainer();
-    db = container.publicCloudDatabase;
-    startBtn.disabled = true;
-    log('Token accepted. Now sign in with the Apple button in step 2.');
-    container.setUpAuth().then(function (user) {
-      if (user) { signedIn(user); }
-      else { container.whenUserSignsIn().then(signedIn); }
+    });
+  }
+
+  // Coming back from Apple's sign-in: the token arrives in the URL (query or fragment).
+  var kept = recall('ppToken');
+  if (kept) tokenEl.value = kept;
+  var params = new URLSearchParams(location.search + '&' + location.hash.replace(/^#/, ''));
+  if (params.get('ckWebAuthToken')) {
+    webAuthToken = params.get('ckWebAuthToken');
+    history.replaceState(null, '', location.pathname);
+    if (apiToken()) {
+      log('Signed in. Tap "Sign up notifications".', 'ok');
+      makeBtn.disabled = false;
+    } else {
+      log('Signed in, but the API token was lost on the way back. Paste it again, then tap "Sign up notifications".', 'bad');
+      makeBtn.disabled = false;
+    }
+  }
+
+  signinBtn.addEventListener('click', function () {
+    if (!apiToken()) { log('Paste the API token first.', 'bad'); return; }
+    store('ppToken', apiToken());
+    signinBtn.disabled = true;
+    log('Asking CloudKit for the sign-in page…');
+    webAuthToken = null;
+    call('GET', '/users/current').then(function (r) {
+      if (r.body && r.body.redirectURL) {
+        log('Opening Apple\'s sign-in page…');
+        location.href = r.body.redirectURL;
+      } else if (r.status === 200) {
+        log('Already signed in. Tap "Sign up notifications".', 'ok');
+        makeBtn.disabled = false;
+        signinBtn.disabled = false;
+      } else {
+        signinBtn.disabled = false;
+        log('CloudKit didn\'t give a sign-in page: ' + describe(r.body, r.status) +
+            '\nCheck the token (and that its Sign In Callback is URL Redirect to this page).', 'bad');
+      }
     }).catch(function (e) {
-      startBtn.disabled = false;
-      log('CloudKit refused the token: ' + describe(e) + '\nCheck the token, its Allowed Origins and that its Sign In Callback is postMessage.', 'bad');
+      signinBtn.disabled = false;
+      log('Couldn\'t reach CloudKit: ' + e, 'bad');
     });
   });
 
-  try { var kept = sessionStorage.getItem('ppToken'); if (kept) { tokenEl.value = kept; } } catch (e) {}
-
-  function save(full) {
-    return db.saveSubscriptions(subscriptions(full)).then(function (resp) {
-      if (resp.hasErrors) { throw resp.errors && resp.errors.length ? resp.errors[0] : resp; }
-      return resp;
-    });
+  // The same subscription shapes the app saves (CloudTransport.subscribe): Envelope records for one recipient, one for
+  // kind "message" (an alert) and one for kind "receipt" (silent). The recipient is a placeholder: only the shape
+  // matters for promoting them to Production.
+  function sub(id, kind, info) {
+    return { operationType: 'create', subscription: {
+      subscriptionID: id, subscriptionType: 'query', firesOn: ['create'],
+      query: { recordType: 'Envelope', filterBy: [
+        { comparator: 'EQUALS', fieldName: 'recipient', fieldValue: { value: 'setup-page' } },
+        { comparator: 'EQUALS', fieldName: 'kind', fieldValue: { value: kind } }
+      ] },
+      notificationInfo: info
+    } };
+  }
+  function attempt(info) {
+    return call('POST', '/subscriptions/modify', { operations: [
+      sub('envelopes-setup-page', 'message', info),
+      sub('receipts-setup-page', 'receipt', { shouldSendContentAvailable: true })
+    ] });
+  }
+  function failures(r) {
+    if (r.status !== 200) return [describe(r.body, r.status)];
+    return ((r.body && r.body.subscriptions) || [])
+      .filter(function (s) { return s.serverErrorCode && s.serverErrorCode !== 'EXISTS' && s.serverErrorCode !== 'CONFLICT'; })
+      .map(function (s) { return describe(s, r.status); });
   }
 
   makeBtn.addEventListener('click', function () {
+    if (!apiToken()) { log('Paste the API token first.', 'bad'); return; }
     makeBtn.disabled = true;
     log('Signing up…');
-    save(true).catch(function (e) {
-      log('Full version refused (' + describe(e) + '); trying the simpler version…');
-      return save(false);
+    var full = { alertBody: 'New message', soundName: 'default', shouldSendContentAvailable: true };
+    var simple = { alertBody: 'New message', shouldSendContentAvailable: true };
+    attempt(full).then(function (r) {
+      var bad = failures(r);
+      if (!bad.length) return r;
+      log('First try refused (' + bad.join('; ') + '); trying a simpler version…');
+      return attempt(simple).then(function (r2) {
+        var bad2 = failures(r2);
+        if (bad2.length) throw new Error(bad2.join('; '));
+        return r2;
+      });
     }).then(function () {
       log('Saved both notification sign-ups in the test area.', 'ok');
-      return db.fetchAllSubscriptions().then(function (resp) {
-        var ids = (resp.subscriptions || []).map(function (s) { return s.subscriptionID; });
+      return call('GET', '/subscriptions/list').then(function (r) {
+        var ids = ((r.body && r.body.subscriptions) || []).map(function (s) { return s.subscriptionID; });
         log('CloudKit now lists: ' + (ids.join(', ') || '(none)'));
         log('Done. Now do step 4: Deploy Schema Changes, then reopen Paper Plane.', 'ok');
+        store('ppToken', null);
       });
     }).catch(function (e) {
       makeBtn.disabled = false;
-      log('Didn\'t work: ' + describe(e) + '\nTake a screenshot of this and send it to Claude.', 'bad');
+      log('Didn\'t work: ' + (e && e.message ? e.message : e) + '\nTake a screenshot of this and send it to Claude.', 'bad');
     });
   });
 })();
